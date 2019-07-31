@@ -1,33 +1,33 @@
 {
-  "name": "marsphotodownloader",
-  "version": "0.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "node ./bin/www",
-    "prod": "node ./bin/www"
-  },
-  "dependencies": {
-    "cookie-parser": "~1.4.4",
-    "debug": "~2.6.9",
-    "express": "~4.16.1",
-    "http-errors": "~1.6.3",
-    "jade": "~1.11.0",
-    "morgan": "~1.9.1",
-    "node-sass-middleware": "0.11.0"
-  },
-  "devDependencies": {
-    "nodemon": "^1.19.1"
-  },
-  "nodemonConfig": {
-    "name": "test-nodemon",
-    "version": "1.0.0",
-    "description": "",
+    "name": "marsphotodownloader",
+    "version": "0.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "node ./bin/www",
+        "prod": "node ./bin/www"
+        },
+    "dependencies": {
+        "cookie-parser": "~1.4.4",
+        "debug": "~2.6.9",
+        "express": "~4.16.1",
+        "http-errors": "~1.6.3",
+        "morgan": "~1.9.1",
+        "node-sass-middleware": "0.11.0",
+        "pug": "2.0.0-beta11"
+    },
+    "devDependencies": {
+        "nodemon": "^1.19.1"
+    },
     "nodemonConfig": {
-      "watch": [
-        "routes",
-        "views"
-      ],
-      "ext": "js"
+        "name": "test-nodemon",
+        "version": "1.0.0",
+        "description": "",
+        "nodemonConfig": {
+            "watch": [
+                "routes",
+                "views"
+            ],
+            "ext": "js"
+        }
     }
-  }
 }
