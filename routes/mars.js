@@ -3,16 +3,20 @@ var router = express.Router();
 var moment = require('moment');
 var bodyParser = require('body-parser');
 var axios = require("axios");
-
-const API_KEY = "DEMO_KEY";
+var fs = require('fs');
+var path = require('path');
 
 router.use(bodyParser.json())
 
-const photos_url = `https://api.nasa.gov/mars-photos/api/v1/rovers/curiosity/photos?api_key=${API_KEY}&earth_date=`
-var rovers_manifests = [
+const API_KEY = process.env.API_KEY ? process.env.API_KEY : "DEMO_KEY";
+const maxPhotosReturnedByNasa = 25;
+const pathManifest = './manifest.json';
+
+var rover_manifests = [
     {
         "name": "opportunity",
         "url": `https://api.nasa.gov/mars-photos/api/v1/manifests/opportunity?api_key=${API_KEY}`,
+        "url_photos": `https://api.nasa.gov/mars-photos/api/v1/rovers/opportunity/photos?api_key=${API_KEY}&earth_date=`,
         "manifest": undefined,
         "manifest_download_date": undefined,
         "min_date": undefined,
@@ -21,6 +25,7 @@ var rovers_manifests = [
     {
         "name": "spirit",
         "url": `https://api.nasa.gov/mars-photos/api/v1/manifests/spirit?api_key=${API_KEY}`,
+        "url_photos": `https://api.nasa.gov/mars-photos/api/v1/rovers/spirit/photos?api_key=${API_KEY}&earth_date=`,
         "manifest": undefined,
         "manifest_download_date": undefined,
         "min_date": undefined,
@@ -29,6 +34,7 @@ var rovers_manifests = [
     {
         "name": "curiosity",
         "url": `https://api.nasa.gov/mars-photos/api/v1/manifests/curiosity?api_key=${API_KEY}`,
+        "url_photos": `https://api.nasa.gov/mars-photos/api/v1/rovers/curiosity/photos?api_key=${API_KEY}&earth_date=`,
         "manifest": undefined,
         "manifest_download_date": undefined,
         "min_date": undefined,
@@ -36,11 +42,26 @@ var rovers_manifests = [
     },
 ];
 
+// Load the data from the file system to avoid using up our daily API limit
+const readManifestFromFile = async () => {
+    if (fs.existsSync(pathManifest)) {
+        let rawData = fs.readFileSync(pathManifest);
+        rover_manifests = JSON.parse(rawData);
+    } else {
+        await getLatestManifest();
+    }
+}
+
+const writeManifestFromFile = () => {
+    let data = JSON.stringify(rover_manifests);
+    fs.writeFileSync(pathManifest, data);
+}
+
 function getRoverByName(name) {
     name = name.toLowerCase();
-    for(let i=0; i<rovers_manifests.length; i++) {
-        if (rovers_manifests[i].name === name) {
-            return rovers_manifests[i];
+    for (let i = 0; i < rover_manifests.length; i++) {
+        if (rover_manifests[i].name === name) {
+            return rover_manifests[i];
         }
     }
     return undefined;
@@ -49,7 +70,7 @@ function getRoverByName(name) {
 const getLatestManifest = async () => {
     let fetches = [];
     let today = moment().utc().startOf('day');
-    rovers_manifests.forEach(rover => {
+    rover_manifests.forEach(rover => {
         // Avoid downloading the manifest if we already have the latest
         if (!rover.manifest_download_date || rover.manifest_download_date < today) {
             fetches.push(axios.get(rover.url));
@@ -75,42 +96,145 @@ const getLatestManifest = async () => {
     });
 }
 
-router.get('/:earth_date', async function (req, res, next) {
-    console.log("earth_date is " + req.params.earth_date);
+const downloadPhotos = async (earth_date_string) => {
+    let downloadedFiles = 0;
+    let cachedFiles = 0;
+    let totalFiles = 0;
+    let photoUrls = findPhotosInManifest(earth_date_string);
+    let targetPath = path.join(__dirname, 'public/images', earth_date_string);
+    let photoListRequests = [];
 
-    let earth_date = new moment.utc(req.params.earth_date, "YYYYMMDD"); // parse as UTC
-    if (!earth_date.isValid() || req.params.earth_date.length != 8) {
-        res.status(400); // Bad request
-        return res.json({
-            "status": "error",
-            "description": "Requested date is has an invalid format. The expected date format is YYYYMMDD.",
-            "requested_date": req.params.earth_date,
-            "files_downloaded": 0,
+    // execute the photo lists in parallel
+    photoUrls.forEach(photo => {
+        // let targetFile = path.join(targetPath, photo)
+        let numPages = (photo.total_photos + maxPhotosReturnedByNasa - 1) / maxPhotosReturnedByNasa;
+        for (let p = 0; p < numPages; p++) {
+            const pageReq = numPages > 1 ? "&page=" + p : "";
+            photoListRequests.push(axios.get(p.url_photos + earth_date_string + pageReq));
+        }
+        totalFiles += total_photos;
+    });
+    let photoListJson = await Promise.all(photoListRequests);
+
+    let imgUrls = [];
+    if (photoListJson.photos) {
+        photoListJson.photos.forEach(photo => {
+            const urlPath = new URL(photo.img_src).pathname;
+            const fileName = path.basename(urlPath);
+            const targetFile = path.join(targetPath, fileName);
+            // If the file already exists don't download it.
+            if (fs.existsSync(targetFile)) {
+                cachedFiles++;
+            } else {
+                downloadedFiles++;
+                imgUrls.push(downloadImage(targetUrl, targetFile));
+            }
         });
     }
+    let imgResults = await Promise.all(imgUrls);
 
+    return ({
+        downloadedFiles,
+        cachedFiles,
+        totalFiles,
+    });
+}
+
+async function downloadImage(targetUrl, targetFile) {
+    const writer = Fs.createWriteStream(targetFile);
+
+    const response = await Axios({
+        targetUrl,
+        method: 'GET',
+        responseType: 'stream'
+    })
+
+    response.data.pipe(writer)
+
+    return new Promise((resolve, reject) => {
+        writer.on('finish', resolve)
+        writer.on('error', reject)
+    });
+}
+
+const findPhotosInManifest = (earth_date_string) => {
+    let photoUrls = [];
+
+    rover_manifests.forEach(rover => {
+        if (earth_date_string >= rover.min_date || earth_date_string <= rover.max_date) {
+            // inside of date range
+            let photo = findDateInPhotos(rover.manifest.photos.length, earth_date_string);
+            if (photo) {
+                photoUrls.push({
+                    "total_photos": photo.total_photos,
+                    "url_photos": photo.url_photos,
+                    "rover_name": rover_manifests.name
+                });
+            }
+        }
+    });
+    return photoUrls;
+}
+
+const findDateInPhotos = (photos, earth_date_string) => {
+    let photoUrls = [];
+
+    for (let i = 0; i < photos.length; i++) {
+        let photo = photos.photos[i];
+        if (earth_date_string > photo.earth_date) {
+            // Skip testing. The entries are in alphabetical order.
+            // Ideally we should store these as a hash by date or in a database.
+            return undefined;
+        }
+        if (photo.earth_date === earth_date_string) {
+            return photo;
+        }
+    }
+    return undefined;
+}
+
+router.get('/:earth_date', async function (req, res, next) {
     try {
+        let earth_date = new moment.utc(req.params.earth_date, "YYYYMMDD"); // parse as UTC
+        if (!earth_date.isValid() || req.params.earth_date.length != 8) {
+            res.status(400); // Bad request
+            return res.json({
+                "status": "error",
+                "description": "Requested date is has an invalid format. The expected date format is YYYYMMDD.",
+                "requested_date": req.params.earth_date,
+                "files_downloaded": 0,
+            });
+        }
+        let earth_date_string = earth_date.utc().format("YYYY-MM-DD");
+
         await getLatestManifest();
-        const response = await axios.get(photos_url + earth_date.utc().format("YYYY-MM-DD"));
-        const data = response.data;
-        console.log(data);
+        const response = await downloadPhotos(earth_date_string);
 
         return res.json({
             "status": "success",
             "description": "",
             "requested_date": earth_date.utc().format("YYYY-MM-DD"),
-            "files_downloaded": 0,
+            "files_downloaded": response.downloadedFiles,
+            "files_in_cache": response.cachedFiles,
+            "total_files": response.totalFiles,
         });
     } catch (e) {
+        console.log(e.stack);
         res.status(500); // Bad request
         res.json({
             "status": e.isAxiosError ? "error communicating with NASA. Please try again in 20 minutes." : "error",
             "description": e.message,
             "requested_date": req.params.earth_date,
             "files_downloaded": 0,
+            "files_in_cache": 0,
+            "total_files": 0,
         });
         // next(e);
     }
 });
 
-module.exports = router;
+module.exports = {
+    router,
+    writeManifestFromFile,
+    readManifestFromFile
+};
