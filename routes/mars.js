@@ -52,6 +52,7 @@ const readManifestFromFile = async () => {
     }
 }
 
+// Write the manifest to disk
 const writeManifestFromFile = () => {
     let data = JSON.stringify(rover_manifests);
     fs.writeFileSync(pathManifest, data);
@@ -67,6 +68,7 @@ function getRoverByName(name) {
     return undefined;
 }
 
+// Check if the date of the manifest downloader is older than today then reload it.
 const getLatestManifest = async () => {
     let fetches = [];
     let today = moment().utc().startOf('day');
@@ -185,7 +187,7 @@ const findDateInPhotos = (photos, earth_date_string) => {
     for (let i = 0; i < photos.length; i++) {
         let photo = photos[i];
         if (earth_date_string < photo.earth_date) {
-            // Skip testing. The entries are in alphabetical order.
+            // Skip testing. The entries are in ascending order.
             // Ideally we should store these as a hash by date or in a database.
             return undefined;
         }
