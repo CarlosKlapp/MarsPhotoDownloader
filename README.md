@@ -15,7 +15,7 @@ RestAPI to download Mars photos from NASA
         * [npm run build](#npm_run_build)
     * [Test links](#Test)
 
-#Notable features
+# Notable features
 * The app downloads all files in parallel where possible.
 * The downloading of the images is made faster by piping the response into a file stream.
 * The rover manifests are cached to disk when the app exits using Ctrl+C.
