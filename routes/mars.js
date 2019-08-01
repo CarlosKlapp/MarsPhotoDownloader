@@ -88,8 +88,8 @@ const getLatestManifest = async () => {
             let rover = getRoverByName(manifest.name); // if it returns undefined. the error will be handled by middleware.
             rover.manifest = manifest;
             rover.manifest_download_date = today;
-            rover.min_date = new moment.utc(manifest.landing_date, "YYYY-MM-DD");
-            rover.max_date = new moment.utc(manifest.max_date, "YYYY-MM-DD");
+            rover.min_date = manifest.landing_date;
+            rover.max_date = manifest.max_date;
         } else {
             throw new Error("HTTP status code " + res.status);
         }
@@ -101,24 +101,27 @@ const downloadPhotos = async (earth_date_string) => {
     let cachedFiles = 0;
     let totalFiles = 0;
     let photoUrls = findPhotosInManifest(earth_date_string);
-    let targetPath = path.join(__dirname, 'public/images', earth_date_string);
+    let targetPath = path.join('./public/images', earth_date_string);
     let photoListRequests = [];
+
+    // create the folder if it doesn't exist
+    fs.mkdirSync(targetPath, { recursive: true });
 
     // execute the photo lists in parallel
     photoUrls.forEach(photo => {
         // let targetFile = path.join(targetPath, photo)
-        let numPages = (photo.total_photos + maxPhotosReturnedByNasa - 1) / maxPhotosReturnedByNasa;
+        let numPages = Math.trunc((photo.total_photos + maxPhotosReturnedByNasa - 1) / maxPhotosReturnedByNasa);
         for (let p = 0; p < numPages; p++) {
-            const pageReq = numPages > 1 ? "&page=" + p : "";
-            photoListRequests.push(axios.get(p.url_photos + earth_date_string + pageReq));
+            const pageReq = numPages > 1 ? "&page=" + (p+1) : "";
+            photoListRequests.push(axios.get(photo.url_photos + earth_date_string + pageReq));
         }
-        totalFiles += total_photos;
+        totalFiles += photo.total_photos;
     });
     let photoListJson = await Promise.all(photoListRequests);
 
     let imgUrls = [];
-    if (photoListJson.photos) {
-        photoListJson.photos.forEach(photo => {
+    photoListJson.forEach(response => {
+        response.data.photos.forEach(photo => {
             const urlPath = new URL(photo.img_src).pathname;
             const fileName = path.basename(urlPath);
             const targetFile = path.join(targetPath, fileName);
@@ -127,10 +130,10 @@ const downloadPhotos = async (earth_date_string) => {
                 cachedFiles++;
             } else {
                 downloadedFiles++;
-                imgUrls.push(downloadImage(targetUrl, targetFile));
+                imgUrls.push(downloadImage(photo.img_src, targetFile));
             }
-        });
-    }
+        })
+    });
     let imgResults = await Promise.all(imgUrls);
 
     return ({
@@ -141,10 +144,10 @@ const downloadPhotos = async (earth_date_string) => {
 }
 
 async function downloadImage(targetUrl, targetFile) {
-    const writer = Fs.createWriteStream(targetFile);
+    const writer = fs.createWriteStream(targetFile);
 
-    const response = await Axios({
-        targetUrl,
+    const response = await axios({
+        url: targetUrl,
         method: 'GET',
         responseType: 'stream'
     })
@@ -163,12 +166,12 @@ const findPhotosInManifest = (earth_date_string) => {
     rover_manifests.forEach(rover => {
         if (earth_date_string >= rover.min_date || earth_date_string <= rover.max_date) {
             // inside of date range
-            let photo = findDateInPhotos(rover.manifest.photos.length, earth_date_string);
+            let photo = findDateInPhotos(rover.manifest.photos, earth_date_string);
             if (photo) {
                 photoUrls.push({
                     "total_photos": photo.total_photos,
-                    "url_photos": photo.url_photos,
-                    "rover_name": rover_manifests.name
+                    "url_photos": rover.url_photos,
+                    "rover_name": rover.name
                 });
             }
         }
@@ -180,8 +183,8 @@ const findDateInPhotos = (photos, earth_date_string) => {
     let photoUrls = [];
 
     for (let i = 0; i < photos.length; i++) {
-        let photo = photos.photos[i];
-        if (earth_date_string > photo.earth_date) {
+        let photo = photos[i];
+        if (earth_date_string < photo.earth_date) {
             // Skip testing. The entries are in alphabetical order.
             // Ideally we should store these as a hash by date or in a database.
             return undefined;
