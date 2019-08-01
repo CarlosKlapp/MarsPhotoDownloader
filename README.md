@@ -67,9 +67,8 @@ In the project directory, you can run:
 ### `npm run dev` <a name="npmstart"></a>
 
 Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
 
-The page will reload if you make edits.<br>
+The app will reload if you make edits.<br>
 You will also see any lint errors in the console.
 
 ### `npm run build` <a name="npm_run_build"></a>
@@ -85,7 +84,7 @@ See the section about [deployment](https://facebook.github.io/create-react-app/d
 ## Test links <a name="Test"></a>
 
 no images
-http://localhost:3001/mars/20190101
+http://localhost:3001/mars/30990101
 
 error - bad date
 http://localhost:3001/mars/201901012
